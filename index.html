@@ -56,10 +56,8 @@
         <button class="rec-btn" id="recBtn" aria-label="Record"><i></i></button>
         <span class="rec-hint" id="recHint">Tap to record</span>
       </div>
-      <div class="muted small" id="voiceNote" hidden>Your voice comes from the phone's mic and the piano from the app. Use headphones so the mic doesn't hear the piano twice.</div>
+      <div class="muted small" id="voiceNote" hidden>Your voice is recorded from the mic only while you're not playing, so the piano is never recorded twice. Stop playing for a moment to talk.</div>
     </section>
-
-    <section class="card" id="lastTake" hidden></section>
 
     <section class="card takes-card">
       <div class="card-title">Recordings</div>
@@ -93,6 +91,8 @@
   <script src="pianoview.js"></script>
   <script src="app.js"></script>
   <script src="video.js"></script>
+  <script src="mp4-muxer.js"></script>
+  <script src="mp4rec.js"></script>
   <script src="recorder.js"></script>
   <script>
     if ('serviceWorker' in navigator) {

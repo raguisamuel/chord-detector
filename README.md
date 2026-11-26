@@ -29,5 +29,6 @@
 ارفع الملفات الجديدة بنفس الطريقة (Add file ← Upload files ← Commit).
 لو فيه تحديث، غيّر `VERSION` في `sw.js` (مثلاً `v2`) عشان الموبايلات تاخد النسخة الجديدة.
 
-## صوت البيانو
+## صوت البيانو والمكتبات
 - Salamander Grand Piano V3 by Alexander Holm (CC-BY 3.0). The app uses the piano sound only, to stay small.
+- mp4-muxer by Vanilagy (MIT), used to save the video as a standard MP4 that WhatsApp accepts.

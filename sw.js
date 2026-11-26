@@ -1,11 +1,11 @@
 // Offline support. The app itself is cached when installed; each instrument's sounds are cached the first
 // time you use them. When you upload a new version, change VERSION so phones pick up the new files.
-const VERSION = 'v2';
+const VERSION = 'v3';
 const APP = 'chords-app-' + VERSION;
 const SOUNDS = 'chords-sounds-v1';
 const FILES = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
-  'chords.js', 'samples.js', 'piano.js', 'pianoview.js', 'app.js', 'video.js', 'recorder.js',
+  'chords.js', 'samples.js', 'piano.js', 'pianoview.js', 'app.js', 'video.js', 'mp4-muxer.js', 'mp4rec.js', 'recorder.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
 ];
 

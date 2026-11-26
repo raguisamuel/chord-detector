@@ -1,8 +1,10 @@
-/* global Chords, Piano, VideoView */
+/* global Chords, Piano, VideoView, Mp4Rec */
 // Recording on the phone. Two modes:
-//   Piano only    : video of the dark piano view, sound = the app's instrument.
-//   Piano + voice : same video, sound = the app's instrument + your voice from the phone's mic.
-// After recording: Save video, or Copy notes (what was played, as text).
+//   Piano only    : video of the dark piano view, sound = the piano from the app.
+//   Piano + voice : same video; your voice from the mic is added, but only while you're not playing,
+//                   so the piano never gets recorded twice (once from the app, once through the mic).
+// The video is a standard MP4 so WhatsApp and the gallery accept it. After recording: Save video,
+// Copy notes, or Share (the notes go along as the message text).
 (function () {
   const $ = (id) => document.getElementById(id);
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -52,6 +54,27 @@
   }
   let takes = [];
 
+  // ---------- Voice gate: the mic is open only while you're not playing ----------
+  const QUIET_BEFORE_VOICE = 800; // ms after the last key before the mic opens again
+  function startVoiceGate(r) {
+    let lastActive = -Infinity;
+    const ctx = Piano.context();
+    const OPEN = 1.3;
+    const gate = () => {
+      const k = App.keyState();
+      const now = performance.now();
+      if (k.pressed.size || k.ringing.size) lastActive = now;
+      const open = now - lastActive >= QUIET_BEFORE_VOICE;
+      // close fast when you play, open smoothly when you stop
+      r.micGain.gain.setTargetAtTime(open ? OPEN : 0, ctx.currentTime, open ? 0.08 : 0.008);
+    };
+    r.micGain.gain.value = OPEN;
+    const prev = App.onKeys;
+    App.onKeys = () => { gate(); if (prev) prev(); };
+    const timer = setInterval(gate, 40);
+    return () => { clearInterval(timer); App.onKeys = prev; };
+  }
+
   // ---------- Recording ----------
   let rec = null;
   let tick = null;
@@ -61,7 +84,7 @@
   App.onChord = (name) => { if (prevChord) prevChord(name); if (rec && rec.start) rec.chords.push({ t: performance.now() - rec.start, name }); };
 
   function pickMime() {
-    const list = ['video/mp4;codecs=avc1.42E01F,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+    const list = ['video/mp4;codecs=avc1.42E01F,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp8,opus', 'video/webm'];
     return list.find((m) => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
   }
 
@@ -71,31 +94,36 @@
     const r = rec = { start: 0, events: [], chords: [], chunks: [], mode, instrument: Piano.instrument() };
     $('recBtn').disabled = true;
     $('recHint').textContent = 'Starting…';
-    try {
-      const video = VideoView.stream(r, mode);
-      if (mode === 'voice') {
-        try {
-          r.mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
-          const ctx = Piano.context();
-          const src = ctx.createMediaStreamSource(r.mic);
-          const gain = ctx.createGain();
-          gain.gain.value = 1.2;
-          src.connect(gain);
-          r.detachMic = Piano.attachToRecording(gain); // voice goes into the recording only, never to the speaker
-        } catch (e) {
-          App.toast('Microphone not available, recording the piano only');
-        }
+    const canvas = VideoView.start(r, mode);
+    if (mode === 'voice') {
+      try {
+        r.mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
+        const ctx = Piano.context();
+        r.micGain = ctx.createGain();
+        ctx.createMediaStreamSource(r.mic).connect(r.micGain);
+        r.detachMic = Piano.attachToRecording(r.micGain); // into the recording only, never to the speaker
+        r.stopGate = startVoiceGate(r);
+      } catch (e) {
+        App.toast('Microphone not available, recording the piano only');
       }
-      const stream = new MediaStream([...video.getVideoTracks(), ...Piano.recordingStream().getAudioTracks()]);
-      const mime = pickMime();
-      const opts = { videoBitsPerSecond: 5000000, audioBitsPerSecond: 160000 };
-      if (mime) opts.mimeType = mime;
-      const mr = new MediaRecorder(stream, opts);
-      mr.ondataavailable = (e) => { if (e.data && e.data.size) r.chunks.push(e.data); };
-      mr.start(1000);
-      r.mr = mr; r.mime = mr.mimeType || mime || 'video/webm';
+    }
+    const audioTrack = Piano.recordingStream().getAudioTracks()[0];
+    try {
+      r.mp4 = await Mp4Rec.start(canvas, audioTrack, Piano.context().sampleRate);
     } catch (e) {
-      App.toast('Video could not start on this phone');
+      // older phones: the browser's own recorder
+      try {
+        const stream = new MediaStream([...canvas.captureStream(VideoView.FPS).getVideoTracks(), audioTrack]);
+        const mime = pickMime();
+        const opts = { videoBitsPerSecond: 4000000, audioBitsPerSecond: 128000 };
+        if (mime) opts.mimeType = mime;
+        const mr = new MediaRecorder(stream, opts);
+        mr.ondataavailable = (ev) => { if (ev.data && ev.data.size) r.chunks.push(ev.data); };
+        mr.start(1000);
+        r.mr = mr; r.mime = mr.mimeType || mime || 'video/webm';
+      } catch (err) {
+        App.toast('Video could not start on this phone');
+      }
     }
     r.start = performance.now();
     $('recBtn').disabled = false;
@@ -110,25 +138,34 @@
     rec = null;
     clearInterval(tick);
     $('recBtn').classList.remove('on');
-    $('recHint').textContent = 'Tap to record';
+    $('recBtn').disabled = true;
+    $('recHint').textContent = 'Saving…';
     $('recTime').textContent = '00:00';
     const duration = performance.now() - r.start;
     let video = null;
-    if (r.mr) {
-      await new Promise((res) => { r.mr.onstop = res; r.mr.stop(); });
-      video = new Blob(r.chunks, { type: r.mime });
+    try {
+      if (r.mp4) video = await r.mp4.stop();
+      else if (r.mr) {
+        await new Promise((res) => { r.mr.onstop = res; r.mr.stop(); });
+        video = new Blob(r.chunks, { type: r.mime });
+      }
+    } catch (e) {
+      App.toast('The video could not be finished');
     }
+    if (r.stopGate) r.stopGate(); // the gate's key hook sits on top of the drawing's, so it comes off first
     if (r.cleanup) r.cleanup();
     if (r.detachMic) r.detachMic();
     if (r.mic) r.mic.getTracks().forEach((t) => t.stop());
+    $('recBtn').disabled = false;
+    $('recHint').textContent = 'Tap to record';
     if (!r.events.length && !video) return;
     const num = takes.reduce((m, t) => Math.max(m, t.num || 0), 0) + 1;
     const take = { id: Date.now(), num, name: 'Take ' + num, date: new Date().toISOString(), duration,
-      events: r.events, chords: r.chords, video, videoType: r.mime || '', instrument: r.instrument, mode: r.mode };
+      events: r.events, chords: r.chords, video, videoType: video ? video.type : '', instrument: r.instrument, mode: r.mode };
     takes.unshift(take);
     try { await tx('readwrite', (s) => s.put(take)); } catch (e) { App.toast('Could not keep the recording on the phone'); }
-    renderLast(take);
     renderList();
+    App.toast('Recording saved');
   }
 
   $('recBtn').addEventListener('click', () => (rec ? stopRec() : startRec()));
@@ -187,9 +224,12 @@
   }
 
   const safe = (s) => s.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'take';
+  const isMp4 = (take) => /mp4/.test(take.videoType);
   function videoFile(take) {
-    const ext = /mp4/.test(take.videoType) ? '.mp4' : '.webm';
-    return safe(take.name + ' ' + take.date.slice(0, 16).replace('T', ' ').replace(':', '-')) + ext;
+    return safe(take.name + ' ' + take.date.slice(0, 16).replace('T', ' ').replace(':', '-')) + (isMp4(take) ? '.mp4' : '.webm');
+  }
+  function fileOf(take) {
+    return new File([take.video], videoFile(take), { type: isMp4(take) ? 'video/mp4' : 'video/webm' });
   }
   function saveVideo(take) {
     if (!take.video) { App.toast('This recording has no video'); return; }
@@ -201,66 +241,59 @@
     App.toast('Video saved to Downloads');
   }
   async function shareVideo(take) {
+    const text = notesText(take);
+    const data = { files: [fileOf(take)] };
+    if (text) data.text = text; // WhatsApp puts this under the video as the message
     try {
-      const file = new File([take.video], videoFile(take), { type: take.video.type.split(';')[0] });
-      await navigator.share({ files: [file], title: take.name });
-    } catch (e) { /* cancelled */ }
+      if (navigator.canShare && !navigator.canShare(data)) delete data.text;
+      await navigator.share(data);
+    } catch (e) {
+      if (e && e.name === 'AbortError') return; // you closed the share sheet
+      App.toast('Sharing did not work, use Save video instead');
+    }
   }
   const canShare = (take) => {
-    try { return !!(take.video && navigator.canShare && navigator.canShare({ files: [new File([take.video], 'v.mp4', { type: take.video.type.split(';')[0] })] })); } catch (e) { return false; }
+    try { return !!(take.video && navigator.canShare && navigator.canShare({ files: [fileOf(take)] })); } catch (e) { return false; }
   };
-
-  function buttons(take, box) {
-    const row = el('div', 'take-btns');
-    const b1 = el('button', 'btn primary', 'Save video');
-    b1.addEventListener('click', () => saveVideo(take));
-    const b2 = el('button', 'btn', 'Copy notes');
-    b2.addEventListener('click', () => copyNotes(take));
-    row.append(b1, b2);
-    if (canShare(take)) {
-      const b3 = el('button', 'btn icon', '↗');
-      b3.title = 'Share';
-      b3.setAttribute('aria-label', 'Share video');
-      b3.addEventListener('click', () => shareVideo(take));
-      row.appendChild(b3);
-    }
-    box.appendChild(row);
-    return row;
-  }
-
-  function renderLast(take) {
-    const box = $('lastTake');
-    box.textContent = '';
-    box.appendChild(el('div', 'card-title', 'Recording saved'));
-    const head = el('div', 'take-head');
-    head.append(el('span', 'take-name', take.name), el('span', 'take-meta', fmt(take.duration) + ' · ' + (take.mode === 'voice' ? 'Piano + voice' : 'Piano only')));
-    box.appendChild(head);
-    buttons(take, box);
-    const text = notesText(take);
-    if (text) box.appendChild(el('div', 'notes-text', text));
-    box.hidden = false;
-  }
 
   function renderList() {
     const list = $('takeList');
     list.textContent = '';
     if (!takes.length) { list.appendChild(el('div', 'empty', 'Your recordings will show here.')); return; }
-    takes.forEach((take) => {
+    takes.forEach((take, i) => {
       const row = el('div', 'take');
       const head = el('div', 'take-head');
-      head.append(el('span', 'take-name', take.name), el('span', 'take-meta', new Date(take.date).toLocaleString() + ' · ' + fmt(take.duration)));
+      head.append(el('span', 'take-name', take.name),
+        el('span', 'take-meta', new Date(take.date).toLocaleString() + ' · ' + fmt(take.duration) + (take.mode === 'voice' ? ' · with voice' : '')));
       row.appendChild(head);
-      const btns = buttons(take, row);
+      const btns = el('div', 'take-btns');
+      const save = el('button', 'btn primary', 'Save video');
+      save.addEventListener('click', () => saveVideo(take));
+      const copy = el('button', 'btn', 'Copy notes');
+      copy.addEventListener('click', () => copyNotes(take));
+      btns.append(save, copy);
+      if (canShare(take)) {
+        const share = el('button', 'btn icon', '↗');
+        share.setAttribute('aria-label', 'Share video with the notes');
+        share.title = 'Share';
+        share.addEventListener('click', () => shareVideo(take));
+        btns.appendChild(share);
+      }
       const del = el('button', 'btn icon danger', '✕');
       del.setAttribute('aria-label', 'Delete recording');
       del.addEventListener('click', async () => {
         if (!window.confirm('Delete "' + take.name + '"? This can\'t be undone.')) return;
         takes = takes.filter((t) => t !== take);
         await tx('readwrite', (s) => s.delete(take.id)).catch(() => {});
-        if (!$('lastTake').hidden && $('lastTake').querySelector('.take-name') && $('lastTake').querySelector('.take-name').textContent === take.name) $('lastTake').hidden = true;
         renderList();
       });
       btns.appendChild(del);
+      row.appendChild(btns);
+      // the newest recording shows its notes right away
+      if (i === 0) {
+        const text = notesText(take);
+        if (text) row.appendChild(el('div', 'notes-text', text));
+      }
       list.appendChild(row);
     });
   }
@@ -270,5 +303,5 @@
     renderList();
   }).catch(() => renderList());
 
-  window.Recorder = { notesText, start: startRec, stop: stopRec, takes: () => takes };
+  window.Recorder = { notesText, start: startRec, stop: stopRec, takes: () => takes, current: () => rec };
 })();

@@ -70,15 +70,16 @@
   }
 
   window.VideoView = {
-    // A video stream of the drawn view; also redraws the instant a key changes.
-    stream(r, mode) {
+    W, H, FPS,
+    // Starts drawing the view (30 fps, and the instant a key changes) and returns its canvas.
+    start(r, mode) {
       const view = create(mode);
       view.draw();
       const timer = setInterval(view.draw, 1000 / FPS);
       const prev = window.App.onKeys;
       window.App.onKeys = () => { view.draw(); if (prev) prev(); };
       r.cleanup = () => { clearInterval(timer); window.App.onKeys = prev; };
-      return view.canvas.captureStream(FPS);
+      return view.canvas;
     },
   };
 })();
