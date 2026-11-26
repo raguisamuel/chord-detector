@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#5b5bd6">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="description" content="See the notes and chords you play on your piano, and record videos of them.">
+  <title>Chord Detector</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><img src="icons/icon-192.png" alt="" width="26" height="26"><span>Chord Detector</span></div>
+    <nav class="tabs" role="tablist">
+      <button class="tab on" data-view="live" role="tab">Live</button>
+      <button class="tab" data-view="chords" role="tab">Chords</button>
+    </nav>
+  </header>
+
+  <!-- LIVE -->
+  <main id="view-live" class="view">
+    <div class="status-row">
+      <span class="dot" id="midiDot"></span>
+      <span id="midiStatus">Looking for a piano…</span>
+      <span class="grow"></span>
+      <span class="muted" id="soundStatus"></span>
+    </div>
+
+    <section class="stage">
+      <div class="label" id="kindLabel">Play something</div>
+      <div class="chord" id="chordName">–</div>
+      <div class="sub" id="chordFull"></div>
+      <div class="pills" id="notePills"></div>
+    </section>
+
+    <section class="kb-area">
+      <div class="kb-nav">
+        <button class="nav-btn" id="octDown" aria-label="Lower octave">◀</button>
+        <span class="muted" id="rangeLabel"></span>
+        <button class="nav-btn" id="octUp" aria-label="Higher octave">▶</button>
+      </div>
+      <div class="kb" id="liveKb"></div>
+    </section>
+
+    <section class="card rec-card">
+      <div class="seg" id="recMode">
+        <button data-mode="piano" class="on">Piano only</button>
+        <button data-mode="voice">Piano + voice</button>
+      </div>
+      <div class="rec-row">
+        <span class="rec-time" id="recTime">00:00</span>
+        <button class="rec-btn" id="recBtn" aria-label="Record"><i></i></button>
+        <span class="rec-hint" id="recHint">Tap to record</span>
+      </div>
+      <div class="muted small" id="voiceNote" hidden>Your voice comes from the phone's mic and the piano from the app. Use headphones so the mic doesn't hear the piano twice.</div>
+    </section>
+
+    <section class="card" id="lastTake" hidden></section>
+
+    <section class="card takes-card">
+      <div class="card-title">Recordings</div>
+      <div id="takeList"></div>
+    </section>
+  </main>
+
+  <!-- CHORDS -->
+  <main id="view-chords" class="view" hidden>
+    <div class="label left">Root</div>
+    <div class="chips" id="roots"></div>
+    <div class="label left">Type</div>
+    <div class="chips" id="types"></div>
+    <button class="more-btn" id="moreTypes">More types ▾</button>
+    <section class="lib">
+      <div class="chord small" id="libName">C</div>
+      <div class="sub" id="libNotes"></div>
+      <div class="kb lib-kb" id="libKb"></div>
+      <div class="lib-actions">
+        <button class="btn primary" id="playBtn">▶ Play</button>
+        <button class="btn" id="arpBtn">Arpeggio</button>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="chords.js"></script>
+  <script src="samples.js"></script>
+  <script src="piano.js"></script>
+  <script src="pianoview.js"></script>
+  <script src="app.js"></script>
+  <script src="video.js"></script>
+  <script src="recorder.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+    }
+  </script>
+</body>
+</html>
