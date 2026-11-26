@@ -29,16 +29,22 @@
     const aenc = new AudioEncoder({ output: (c, m) => muxer.addAudioChunk(c, m), error: (e) => { failure = e; } });
     aenc.configure(audio);
 
-    // Video: one frame every 1/30 s from the canvas.
+    // Video: exactly 30 frames per second (constant frame rate, the safest for WhatsApp). If the phone was
+    // busy and a frame slot was missed, the current picture fills it, so the video stays in sync with the sound.
     const t0 = performance.now();
     let n = 0;
     const timer = setInterval(() => {
       if (failure || venc.state !== 'configured') return;
-      const frame = new VideoFrame(canvas, { timestamp: Math.round((performance.now() - t0) * 1000) });
-      venc.encode(frame, { keyFrame: n % 60 === 0 });
-      frame.close();
-      n++;
-    }, 1000 / 30);
+      const due = Math.floor(((performance.now() - t0) / 1000) * 30);
+      let made = 0;
+      while (n <= due && made < 4) {
+        const frame = new VideoFrame(canvas, { timestamp: Math.round((n * 1000000) / 30), duration: Math.round(1000000 / 30) });
+        venc.encode(frame, { keyFrame: n % 60 === 0 });
+        frame.close();
+        n++; made++;
+      }
+      if (n <= due) n = due + 1; // far behind: skip ahead rather than pile up
+    }, 1000 / 60);
 
     // Audio: straight from the app's mix (piano, and the voice when that mode is on).
     const reader = new MediaStreamTrackProcessor({ track: audioTrack }).readable.getReader();
@@ -68,5 +74,21 @@
     };
   }
 
-  window.Mp4Rec = { available, start };
+  // Can this phone make the WhatsApp-friendly MP4? (Shown on screen, so we know which format you get.)
+  async function check(sampleRate) {
+    if (!available()) return { mp4: false, why: 'this browser has no video encoder' };
+    try {
+      const [v, a] = await Promise.all([
+        VideoEncoder.isConfigSupported(VIDEO),
+        AudioEncoder.isConfigSupported({ codec: 'mp4a.40.2', sampleRate, numberOfChannels: 2, bitrate: 128000 }),
+      ]);
+      if (!v.supported) return { mp4: false, why: 'no H.264 video encoder' };
+      if (!a.supported) return { mp4: false, why: 'no AAC audio encoder' };
+      return { mp4: true };
+    } catch (e) {
+      return { mp4: false, why: String(e && e.message || e) };
+    }
+  }
+
+  window.Mp4Rec = { available, start, check };
 })();

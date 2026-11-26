@@ -241,6 +241,7 @@
     App.toast('Video saved to Downloads');
   }
   async function shareVideo(take) {
+    if (!isMp4(take)) App.toast('This recording is WebM, which WhatsApp refuses. Record it again to get MP4.');
     const text = notesText(take);
     const data = { files: [fileOf(take)] };
     if (text) data.text = text; // WhatsApp puts this under the video as the message
@@ -264,7 +265,8 @@
       const row = el('div', 'take');
       const head = el('div', 'take-head');
       head.append(el('span', 'take-name', take.name),
-        el('span', 'take-meta', new Date(take.date).toLocaleString() + ' · ' + fmt(take.duration) + (take.mode === 'voice' ? ' · with voice' : '')));
+        el('span', 'take-meta', new Date(take.date).toLocaleString() + ' · ' + fmt(take.duration) + (take.mode === 'voice' ? ' · with voice' : '')
+          + (take.video ? (isMp4(take) ? ' · MP4' : ' · WebM (old format)') : '')));
       row.appendChild(head);
       const btns = el('div', 'take-btns');
       const save = el('button', 'btn primary', 'Save video');
@@ -297,6 +299,13 @@
       list.appendChild(row);
     });
   }
+
+  // Tell which video format this phone makes, so a WhatsApp problem can be traced.
+  Mp4Rec.check(Piano.context().sampleRate).then((r) => {
+    $('formatNote').textContent = r.mp4
+      ? 'Video: MP4 (works with WhatsApp)'
+      : 'Video: WebM on this phone (' + r.why + '). WhatsApp may refuse it; Save video still works.';
+  });
 
   tx('readonly', (s) => s.getAll()).then((all) => {
     takes = (all || []).sort((a, b) => b.id - a.id);

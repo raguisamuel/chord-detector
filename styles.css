@@ -129,7 +129,6 @@ select {
 @media (orientation: landscape) and (max-height: 600px) {
   :root { --kb-h: max(150px, calc(100dvh - 204px)); }
   .status-row { font-size: 11.5px; }
-  .status-row #midiStatus { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .top { padding-top: calc(4px + env(safe-area-inset-top)); padding-bottom: 4px; }
   .brand span { display: none; }
   .view { max-width: none; padding: 6px calc(10px + env(safe-area-inset-right)) 16px calc(10px + env(safe-area-inset-left)); }

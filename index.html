@@ -24,9 +24,6 @@
   <!-- LIVE -->
   <main id="view-live" class="view">
     <div class="status-row">
-      <span class="dot" id="midiDot"></span>
-      <span id="midiStatus">Looking for a piano…</span>
-      <span class="grow"></span>
       <span class="muted" id="soundStatus"></span>
     </div>
 
@@ -56,6 +53,7 @@
         <button class="rec-btn" id="recBtn" aria-label="Record"><i></i></button>
         <span class="rec-hint" id="recHint">Tap to record</span>
       </div>
+      <div class="muted small" id="formatNote"></div>
       <div class="muted small" id="voiceNote" hidden>Your voice is recorded from the mic only while you're not playing, so the piano is never recorded twice. Stop playing for a moment to talk.</div>
     </section>
 

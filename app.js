@@ -1,5 +1,5 @@
 /* global Chords, Piano */
-// Mobile Chord Detector: live note/chord detection (USB MIDI piano or touch keyboard) and the chord display.
+// Mobile Chord Detector: live note/chord detection on a multi-touch keyboard, and the chord display.
 (function () {
   const $ = (id) => document.getElementById(id);
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -118,11 +118,8 @@
     return Math.max(2, Math.min(4, Math.floor(w / (7 * minWhite))));
   }
 
-  // ---------- Live detection ----------
-  const held = new Set();
-  const sustained = new Set();
+  // ---------- Live detection (played with your fingers on the screen) ----------
   const touched = new Set();
-  let pedalDown = false;
   let startC = store.get('startC', 48); // lowest C shown
 
   const liveKb = touchKeyboard($('liveKb'), {
@@ -141,16 +138,9 @@
   window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(() => { liveKb.rebuild(); libKb.rebuild(); }, 120); });
 
   function sounding() {
-    const s = new Set([...held, ...touched]);
-    if (pedalDown) sustained.forEach((n) => s.add(n));
-    return [...s].sort((a, b) => a - b);
+    return [...touched].sort((a, b) => a - b);
   }
-  App.keyState = () => {
-    const pressed = new Set([...held, ...touched]);
-    const ringing = new Set();
-    if (pedalDown) sustained.forEach((n) => { if (!pressed.has(n)) ringing.add(n); });
-    return { pressed, ringing, pedal: pedalDown };
-  };
+  App.keyState = () => ({ pressed: new Set(touched), ringing: new Set(), pedal: false });
 
   // Show what is played right away on the keys; the name waits a moment so a chord isn't named note by note.
   let timer = null;
@@ -158,10 +148,6 @@
   let lastCount = 0;
   function schedule() {
     const notes = sounding();
-    // keep MIDI notes visible: follow them with the keyboard
-    const [lo, hi] = liveKb.range();
-    const out = notes.find((n) => n < lo || n > hi);
-    if (out != null && !touched.size) { startC = Math.max(24, Math.min(84, Math.floor(out / 12) * 12 - (out > hi ? 12 : 0))); liveKb.rebuild(); }
     liveKb.show(notes, null);
     if (App.onKeys) App.onKeys();
     const delay = notes.length >= lastCount ? 35 : 160;
@@ -229,50 +215,6 @@
       rootPc,
       faded: false,
     };
-  }
-
-  // ---------- MIDI (USB piano through an OTG cable) ----------
-  function onMidi(e) {
-    const [st, d1, d2] = e.data;
-    const cmd = st & 0xf0;
-    if (cmd === 0x90 && d2 > 0) {
-      held.add(d1); sustained.delete(d1);
-      Piano.noteOn(d1, d2); emit('on', d1, d2);
-    } else if (cmd === 0x80 || (cmd === 0x90 && d2 === 0)) {
-      held.delete(d1);
-      if (pedalDown) sustained.add(d1);
-      Piano.noteOff(d1); emit('off', d1, 0);
-    } else if (cmd === 0xb0 && d1 === 64) {
-      const down = d2 >= 64;
-      if (down === pedalDown) return;
-      pedalDown = down;
-      if (!pedalDown) sustained.clear();
-      Piano.setSustain(pedalDown); emit('ped', 64, pedalDown ? 127 : 0);
-    } else if (cmd === 0xb0 && (d1 === 123 || d1 === 120)) {
-      held.clear(); sustained.clear(); Piano.allOff();
-    } else return;
-    schedule();
-  }
-  function refreshInputs(access) {
-    const inputs = [...access.inputs.values()];
-    inputs.forEach((inp) => { inp.onmidimessage = onMidi; });
-    const connected = inputs.filter((i) => i.state === 'connected');
-    $('midiDot').className = 'dot ' + (connected.length ? 'ok' : 'warn');
-    $('midiStatus').textContent = connected.length
-      ? 'Piano connected: ' + connected.map((i) => i.name).join(', ')
-      : 'No piano connected. Plug it in with a USB OTG cable, or play on the keys below.';
-  }
-  if (navigator.requestMIDIAccess) {
-    navigator.requestMIDIAccess({ sysex: false }).then((access) => {
-      refreshInputs(access);
-      access.onstatechange = () => { held.clear(); sustained.clear(); refreshInputs(access); schedule(); };
-    }, () => {
-      $('midiDot').className = 'dot warn';
-      $('midiStatus').textContent = 'Piano access was blocked. Allow MIDI for this app, or play on the keys below.';
-    });
-  } else {
-    $('midiDot').className = 'dot warn';
-    $('midiStatus').textContent = 'This browser cannot read a MIDI piano. Use Chrome on Android, or play on the keys below.';
   }
 
   // ---------- Chords tab ----------
